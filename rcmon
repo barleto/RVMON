@@ -1,0 +1,177 @@
+#!/usr/bin/python3
+import serial
+from cmd import Cmd
+import sys
+import bincopy
+import math
+import os
+import signal
+
+
+class Rcmon(Cmd):
+
+    def __init__(self, ser = None):
+        Cmd.__init__(self)
+        self.ser = ser
+        self.subprocessing = False
+
+    def do_conn(self, args):
+        """conn device baudrate"""
+        args = args.split()
+        print("Try to open "+args[0])
+        self.ser = serial.Serial(args[0], baudrate=args[1] , timeout = 0.05)
+        self.ser.write(b"UUUU")
+        print("Connected.")
+
+    def str2barray(self, s, base):
+        bitsPerChar = math.log(base,2)
+        bytesPerChar = bitsPerChar / 8
+        totalBytes = math.ceil(bytesPerChar * len(s))
+        return int(s,base).to_bytes(totalBytes, byteorder="big")
+
+    def do_sw(self,args):
+        """sw hexAddress (data32bits)+ """
+        args = args.split()
+        addr = int(args[0],16)
+        data = args[1:]
+        if len(data) == 0:
+            print("invalid amount of data.")
+            return
+        amount = len(data)
+        if amount > (2**6) or amount < 1:
+            print("Amount need to fit in 6 bits")
+            return
+        mes = "11"+"{:06b}".format(amount-1)+"{:032b}".format(addr)
+        print("<  {:010x}".format(int(mes,2)))
+        mes = self.str2barray(mes,2)
+        self.ser.write(mes)
+        for d in data:
+            d = int(d,16)
+            bd = "{:032b}".format(d)
+            print("<  {:08x}".format(d))
+            barray = self.str2barray(bd,2)
+            self.ser.write(barray)
+
+    def replayserialfile(self, fileName):
+        r = open(fileName, "rb").read()
+        self.ser.write(r)
+
+    def do_replay(self,args):
+        """replay fileName"""
+        args = args.split()
+        self.replayserialfile(args[0])
+
+    def runHexFile():
+        pass
+
+    def do_srecl(self, args):
+        """srecl srecFileName addresToLadInHex """
+        args = args.split()
+        fileName = args[0]
+        addr = int(args[1],16)
+        f = bincopy.BinFile()
+        f.add_srec_file(fileName)
+        d = f.as_binary()
+        datalen = len(d)
+        datatimes = datalen//64
+        for i in range(0,datatimes+1):
+            sendData = d[i*64:64+(i*64)]
+            mes = "11"+"{:06b}".format(len(sendData)-1)+"{:032b}".format(addr)
+            mes = self.str2barray(mes,2)
+            ser.write(mes + sendData)
+
+    def do_sr(self,args):
+        """sr hexAddress amount """
+        if self.ser == None:
+            print("Serial not connected.")
+            return
+        args = args.split()
+        addr = int(args[0],16)
+        if addr > 0xffffffff:
+            print("Invalid 32bit adress "+addr)
+            return
+        amount = int(args[1])
+        if amount > (2**6) or amount < 1:
+            print("Amount need to fit in 6 bits")
+            return
+        mes = "10"+"{:06b}".format(amount-1)+"{:032b}".format(addr)
+        print("<  {:010x}".format(int(mes,2)))
+        mes = self.str2barray(mes,2)
+        self.ser.write(mes)
+        for t in range(0,amount):
+            res = self.ser.read(4)
+            while(len(res) > 0):
+                res = int.from_bytes(res, byteorder='big', signed=False)
+                print(">  {:08x}".format(res))
+                res = self.ser.read(4)
+
+    def do_i(self, args):
+        """i serialCommandsFileName """
+        args = args.split()
+        lines = open(args[0], "r").read().split("\n")
+        lines = [l.partition("-")[0] for l in lines]
+        data = "".join(lines)
+        data = data.replace(" ","")
+        data = data.replace("\t","")
+        data = data.replace("\n","")
+        serData = self.str2barray(data, 16);
+        print("<  " + data)
+        ser.write(serData)
+        res = self.ser.read(4)
+        while(len(res) > 0):
+            res = int.from_bytes(res, byteorder='big', signed=False)
+            print(">  {:08x}".format(res))
+            res = self.ser.read(4)
+
+    def send(self, hexStr):
+        self.serial.write(self.str2barray(hexStr,16))
+
+    def do_run(self, args):
+        """run adressnHex"""
+        args = args.split()
+        addr = args[0]
+        self.do_i(self, "partial/runinit1")
+        #set pc and npc
+        mes = "c090400010" + addr
+        self.ser.write(mes)
+        mes = "c090400014" + "{:08x}".format(int(addr,16)+4)
+        self.do_i(self, "partial/runinit2")
+        #uart loop
+        self.subprocessing = True
+        while(True):
+            self.send("8090000020")    # read dsu break reg
+            self.ser.read(4)
+            self.send("8080000104")    # read uart status reg
+            self.ser.read(4)
+            self.send("8080000110")   # read uart debug FIFO reg, with the output
+            res = self.ser.read(4)
+            print(chr(res[3]))
+            if not self.subprocessing:
+                break
+        print("")
+        self.do_i(self, "partial/runend")
+
+    def do_q(self,args):
+        print("Quiting...");
+        quit()
+
+if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        print("Usage: rcmon device baudrate")
+        quit()
+    dev = sys.argv[1]
+    baud = sys.argv[2]
+    ser = serial.Serial(dev, baudrate=baud , timeout = 0.05)
+    prompt = Rcmon(ser)
+    prompt.prompt = 'rcmon> '
+
+    def signal_handler(sig, frame):
+        if not prompt.subprocessing:
+            print("")
+            prompt.do_q("")
+        else:
+            prompt.subprocessing = False
+    signal.signal(signal.SIGINT, signal_handler)
+
+
+    prompt.cmdloop('Starting Rcmon...')

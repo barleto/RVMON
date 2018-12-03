@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+import sys
+import time
+
+f = open(sys.argv[1], "r")
+f.seek(0,2)
+while(True):
+    inp = f.read()
+    if len(inp) > 0:
+        print(inp, end="", flush=True)

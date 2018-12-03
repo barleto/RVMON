@@ -1,0 +1,9 @@
+.global prog
+prog:
+set 0x25, %g5
+set 0x80000100, %g6
+st %g5, [ %g6 ]
+ba prog
+nop
+nop
+nop

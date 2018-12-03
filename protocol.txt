@@ -1,0 +1,71 @@
+https://www.gaisler.com/doc/gr712rc-usermanual.pdf
+
+init
+  55 55 55 55 80 ff ff ff f0
+
+after init, propably get some inf/ID from pheripherals
+  80 ff ff ff f0
+  87 ff ff f0 00
+  87 ff ff f0 20
+  87 ff ff f0 40
+  87 ff ff f0 60
+  87 ff ff f0 80
+  87 ff ff f0 a0
+  87 ff ff f0 c0
+  87 ff ff f0 e0
+  87 ff ff f1 00
+  87 ff ff f1 20
+  87 ff ff f1 40
+  87 ff ff f1 60
+  87 ff ff f1 80
+  87 ff ff f1 a0
+  87 ff ff f1 c0
+  87 ff ff f1 e0
+  87 ff ff f8 00
+  87 ff ff f8 20
+  87 ff ff f8 40
+  87 ff ff f8 60
+  87 ff ff f8 80
+  87 ff ff f8 a0
+  87 ff ff f8 c0
+  87 ff ff f8 e0
+  87 ff ff f9 00
+  87 ff ff f9 20
+  87 ff ff f9 40
+  87 ff ff f9 60
+  87 ff ff f9 80
+  87 ff ff f9 a0
+  87 ff ff f9 c0
+  87 ff ff f9 e0
+
+  81 80 0f f0 00
+  81 80 0f f0 08
+  81 80 0f f0 10
+  81 80 0f f0 18
+  81 80 0f f0 20
+  81 80 0f f0 28
+  81 80 0f f0 30
+
+Reg
+  get special regs 87 90 40 00 00
+
+  get outs  87 90 30 00 20
+
+  get locals    87 90 30 00 40
+
+  get ins   87 90 30 00 60
+
+   get globals 86 90 30 02 04
+
+  get special regs... again?
+
+  <  80 00 00 00 00                |         ????
+
+  <  80 00 10 00 08                |         ????
+
+
+disassemble 0xXXXXXXXZ C
+  Estrutura:
+    [1byte: 80 + c , 5bytes de offset]
+  Exemplo: disassemble 9 0xf
+    8e 00 00 00 08

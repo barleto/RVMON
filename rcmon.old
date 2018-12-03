@@ -1,0 +1,92 @@
+#!/usr/bin/python3
+import re
+import os
+import select
+import serial
+from cmd import Cmd
+import getpass
+
+def octstr2value(octalString):
+    res = 0
+    pos = 8 * (len(octalString)-1)
+    for i in range(0, len(octalString)):
+        res |= ord(octalString[i]) << pos
+        pos -= 8
+    return res
+
+def getSyscallValueString(file):
+    bytestream = file.read()
+    return bytestream;
+
+
+class Rcmon(Cmd):
+
+    def do_simgrmon(self, args):
+        """simgrmon {device} {inputfile}"""
+        args = args.split(" ")
+        if len(args) != 3:
+            print ("""simgrmon {baudrate} {device} {inputStracefile}""")
+            return
+        else:
+            device = args[1]
+            inputFile = args[2]
+            baudrate = args[0]
+            try:
+                os.chmod(device, 666)
+            except FileNotFoundError:
+                print("error opening", device)
+                return
+            self.beginSimgrmon(device, inputFile, baudrate)
+
+    def endianShift(self, num):
+        return int("{0:b}".format(num)[::-1],2)
+
+    def beginSimgrmon(self, device, inputFile, baudrate):
+        try:
+            dev = open(device, "w")
+        except FileNotFoundError:
+            print("error opening", device)
+            return
+        try:
+                ifile = open(inputFile, "rb")
+        except FileNotFoundError:
+            print("error opening", inputFile)
+            return
+        bytes = getSyscallValueString(ifile)
+        ser = serial.Serial(device, baudrate=baudrate, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)  # open serial port
+        print("writing", len(bytes), "inputs to", device)
+        for i in range(0, len(bytes)):
+            readable, writable, exceptional = select.select([ser], [ser], [], 0.01)
+            for s in readable:
+                print("@")
+                print(ser.read(1))
+            for w in writable:
+                #print(self.endianShift(bytes[i]))
+                ser.write(self.endianShift(bytes[i]))
+        ser.close()
+        return
+
+    def do_quit(self,args):
+        print("Quiting...");
+        quit();
+
+
+
+
+if __name__ == '__main__':
+    if getpass.getuser() != "root":
+        print("Need to run as superuser.")
+        quit()
+    prompt = Rcmon()
+    prompt.prompt = 'rcmon> '
+    prompt.cmdloop('Starting Rcmon...')
+
+
+p = re.compile("write|read", re.IGNORECASE)
+while True:
+    try:
+        line = input()
+        if p.search(line) != None :
+            print(line);
+    except EOFError:
+        exit()
