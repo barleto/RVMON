@@ -10,18 +10,24 @@ import signal
 
 class Rcmon(Cmd):
 
-    def __init__(self, ser = None):
+    def __init__(self, devName, baud):
         Cmd.__init__(self)
-        self.ser = ser
-        self.subprocessing = False
+        self.conn(devName, baud)
+        self.processng = False
+
+    def try_connect():
+        pass
+
+    def conn(self, devName, baud):
+        print("Try to open "+devName)
+        self.ser = serial.Serial(devName, baudrate=baud , timeout = 0.05)
+        self.ser.write(b"UUUU")
+        print("Connected.")
 
     def do_conn(self, args):
         """conn device baudrate"""
         args = args.split()
-        print("Try to open "+args[0])
-        self.ser = serial.Serial(args[0], baudrate=args[1] , timeout = 0.05)
-        self.ser.write(b"UUUU")
-        print("Connected.")
+        self.conn(args[0], args[1])
 
     def str2barray(self, s, base):
         bitsPerChar = math.log(base,2)
@@ -88,7 +94,7 @@ class Rcmon(Cmd):
         args = args.split()
         addr = int(args[0],16)
         if addr > 0xffffffff:
-            print("Invalid 32bit adress "+addr)
+            print("Invalid 32bit adress {:x}".format(addr))
             return
         amount = int(args[1])
         if amount > (2**6) or amount < 1:
@@ -105,7 +111,7 @@ class Rcmon(Cmd):
                 print(">  {:08x}".format(res))
                 res = self.ser.read(4)
 
-    def do_i(self, args):
+    def do_i(self, args, echo=True):
         """i serialCommandsFileName """
         args = args.split()
         lines = open(args[0], "r").read().split("\n")
@@ -115,41 +121,73 @@ class Rcmon(Cmd):
         data = data.replace("\t","")
         data = data.replace("\n","")
         serData = self.str2barray(data, 16);
-        print("<  " + data)
-        ser.write(serData)
+        if echo:
+            print("<  " + data)
+        self.ser.write(serData)
         res = self.ser.read(4)
         while(len(res) > 0):
             res = int.from_bytes(res, byteorder='big', signed=False)
-            print(">  {:08x}".format(res))
+            if echo:
+                print(">  {:08x}".format(res))
             res = self.ser.read(4)
 
     def send(self, hexStr):
-        self.serial.write(self.str2barray(hexStr,16))
+        self.ser.write(self.str2barray(hexStr,16))
+
+    def recv(self, numBytes):
+        res = b""
+        res = self.ser.read(4)
+        while(len(res) < numBytes):
+            res += self.ser.read(4)
+        return res
 
     def do_run(self, args):
         """run adressnHex"""
         args = args.split()
         addr = args[0]
-        self.do_i(self, "partial/runinit1")
+        self.do_i( "partial/runinit1", echo=False)
         #set pc and npc
         mes = "c090400010" + addr
-        self.ser.write(mes)
+        self.ser.write(self.str2barray(mes, 16))
         mes = "c090400014" + "{:08x}".format(int(addr,16)+4)
-        self.do_i(self, "partial/runinit2")
+        self.ser.write(self.str2barray(mes, 16))
+        self.do_i( "partial/runinit2", echo=False)
         #uart loop
-        self.subprocessing = True
+        self.processng = True
         while(True):
+            #check for trap
+            self.send("8090000020")
+            self.send("8090000020")
+            res = self.recv(4)
+            print(res)
+            if (res[3] % 2) != 0: # less significant byte is even (0xXXXXXXX1)
+                #error!
+                self.handle_run_trap()
             self.send("8090000020")    # read dsu break reg
-            self.ser.read(4)
+            self.recv(4)
             self.send("8080000104")    # read uart status reg
-            self.ser.read(4)
+            self.recv(4)
             self.send("8080000110")   # read uart debug FIFO reg, with the output
-            res = self.ser.read(4)
+            res = self.recv(4)
             print(chr(res[3]))
-            if not self.subprocessing:
+            if not self.processng:
                 break
         print("")
-        self.do_i(self, "partial/runend")
+        self.do_i( "partial/runend", echo=False)
+
+    def handle_run_trap(self):
+        self.processng = False
+        self.send("8090000020") # get trap base register to get trap type
+        tt = self.ser.read(4)[3]
+        self.send("8090400010") # get pc
+        pc = self.ser.read(4)
+        pc = int.from_bytes(pc, byteorder='big', signed=False)
+        print(
+"""Trap occured!
+PC = {:08x}
+Trap type = {:x}""".format(pc,tt))
+
+
 
     def do_q(self,args):
         print("Quiting...");
@@ -159,19 +197,18 @@ if __name__ == '__main__':
     if len(sys.argv) != 3:
         print("Usage: rcmon device baudrate")
         quit()
+    print("Starting Rcmon...")
     dev = sys.argv[1]
     baud = sys.argv[2]
-    ser = serial.Serial(dev, baudrate=baud , timeout = 0.05)
-    prompt = Rcmon(ser)
+    prompt = Rcmon(dev, baud)
     prompt.prompt = 'rcmon> '
 
     def signal_handler(sig, frame):
-        if not prompt.subprocessing:
+        if not prompt.processng:
             print("")
             prompt.do_q("")
         else:
-            prompt.subprocessing = False
+            prompt.processng = False
     signal.signal(signal.SIGINT, signal_handler)
 
-
-    prompt.cmdloop('Starting Rcmon...')
+    prompt.cmdloop('')
