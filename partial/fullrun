@@ -312,7 +312,7 @@ c080000318
 -- preapre UART to debug mode to begin exec
 8080000108
 c080000108
-    00000843 -- set debug mde
+    00000843 -- set debug mode
 
 -- start execution
 c090000020

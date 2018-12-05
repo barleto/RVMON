@@ -6,28 +6,69 @@ import bincopy
 import math
 import os
 import signal
+import time
 
 
 class Rcmon(Cmd):
 
-    def __init__(self, devName, baud):
+    def __init__(self, devName, baud, redirectUart = False):
         Cmd.__init__(self)
         self.conn(devName, baud)
-        self.processng = False
+        self.setProcessorDebugModeStatus(True)
+        print("Entering processor debug mode...")
+        self.processing = False
+        self.redirectUart = redirectUart
+        if redirectUart :
+            print("Redirection UART to RCMON.")
 
-    def try_connect():
-        pass
+    def tryConnection(self):
+        tryCount = 5
+        for i in range(0, tryCount):
+            self.ser.write(b"UUUU")
+            time.sleep(2)
+            res = self.protocolRead("fffffff0", 1)
+            if len(res) > 0:
+                return
+            print("Connection Error. Trynig again.")
+        print("Could not connect to UART.");
+
+    def configDDR2(self):
+        self.protocolWrite("fff00100", ["16208444", "00c8908c", "13410000", "00000100", "10430105"])
+
+    def configUart(self):
+        self.protocolWrite( "80000108", ["00000000"] )
+        self.protocolWrite( "80000108", ["00000800"] )
+        self.protocolWrite( "80000108", ["00000000"] )
+        self.protocolWrite( "8000010c", ["99999999"] )
+        self.protocolWrite( "80000108", ["00000003"] )
+
+    def configUartDebugMode(self):
+        self.configUart()
+        self.protocolWrite("80000108", ["00000843"])
+
+    def readUartDebug(self):
+        return self.protocolRead("8080000110", 1)
 
     def conn(self, devName, baud):
-        print("Try to open "+devName)
-        self.ser = serial.Serial(devName, baudrate=baud , timeout = 0.05)
-        self.ser.write(b"UUUU")
+        print("Try to connect to "+ devName +" @ {} baudrate".format(baud))
+        self.ser = serial.Serial(devName, baudrate=baud , timeout = 0.1)
+        self.tryConnection()
+        self.configDDR2()
         print("Connected.")
 
     def do_conn(self, args):
         """conn device baudrate"""
         args = args.split()
         self.conn(args[0], args[1])
+
+    def do_fix(self, args):
+        """Use it to try  fix UART connection."""
+        print("Trying to fix connection.")
+        self.tryConnection()
+
+    def do_EOF(self, args):
+        print("EOF received.")
+        self.do_q(args)
 
     def str2barray(self, s, base):
         bitsPerChar = math.log(base,2)
@@ -70,6 +111,57 @@ class Rcmon(Cmd):
     def runHexFile():
         pass
 
+    def do_run(self, args):
+        """run addrHex """
+        args = args.split()
+        addr = int(args[0], 16)
+        pc = "{:08x}".format(addr)
+        npc = "{:08x}".format(addr+4)
+        if self.redirectUart:
+            self.configUartDebugMode()
+        else:
+            self.configUart()
+        #set pc and npc
+        self.protocolWrite("90400010", [pc, npc])
+        #zero registers
+        self.protocolWrite("90300204", ["00000000"]*7)
+        baseRegAddr = 0x90300000
+        for i in range(0, 16):
+            iterAddr = baseRegAddr + (i * 0x20)
+            iterAddr = "{:08x}".format(iterAddr)
+            self.protocolWrite(iterAddr, ["00000000"]*8)
+        self.setProcessorDebugModeStatus(False) # begin execution
+        #execution loop
+        self.processing = True
+        while self.processing:
+            #check if processor entered debug mode
+            if self.isProcessorInDebugMode():
+                self.processing = False
+            if self.redirectUart: #get uart output
+                res = self.protocolRead("80000110",1)
+                if len(res) > 0:
+                    print(chr(int(res[0],16)), end="", flush=True)
+        print("")
+        self.setProcessorDebugModeStatus(True)
+
+    def isProcessorInDebugMode(self, pid = 0):
+        dsuBreakStepReg = int(self.protocolRead("90000020", 1)[0], 16)
+        mask = 1 << pid
+        dsuBreakStepReg = dsuBreakStepReg and pid
+        dsuBreakStepReg = dsuBreakStepReg >> pid
+        if dsuBreakStepReg == 1:
+            return True
+        else:
+            return False
+
+
+    def setProcessorDebugModeStatus(self, newStatus, pid = 0):
+        if newStatus == True:
+            self.protocolWrite("90000020", ["0000ffff"])
+        else:
+            self.protocolWrite("90000020", ["00000000"])
+
+
     def do_srecl(self, args):
         """srecl srecFileName addresToLadInHex """
         args = args.split()
@@ -79,12 +171,12 @@ class Rcmon(Cmd):
         f.add_srec_file(fileName)
         d = f.as_binary()
         datalen = len(d)
-        datatimes = datalen//64
-        for i in range(0,datatimes+1):
+        datatimes = math.ceil( datalen//64 )
+        for i in range(0,datatimes):
             sendData = d[i*64:64+(i*64)]
             mes = "11"+"{:06b}".format(len(sendData)-1)+"{:032b}".format(addr)
             mes = self.str2barray(mes,2)
-            ser.write(mes + sendData)
+            self.ser.write(mes + sendData)
 
     def do_sr(self,args):
         """sr hexAddress amount """
@@ -131,52 +223,42 @@ class Rcmon(Cmd):
                 print(">  {:08x}".format(res))
             res = self.ser.read(4)
 
+    def protocolWrite(self, addrHex, dataHexList):
+        dataHexList = dataHexList[0:64]
+        addr = int(addrHex, 16)
+        mes = "11"+"{:06b}".format(len(dataHexList)-1)+"{:032b}".format(addr)
+        data = self.str2barray(mes,2)
+        for dhex in dataHexList:
+            data += self.str2barray(dhex,16)
+        self.ser.write(data)
+
+    def protocolRead(self, addrHex, count):
+        if count < 1:
+            return []
+        if count > 64:
+            count = 64
+        addr = int(addrHex, 16)
+        mes = "10"+"{:06b}".format(count-1)+"{:032b}".format(addr)
+        self.ser.write(self.str2barray(mes,2))
+        data = []
+        for i in range(0,count):
+            res = self.ser.read(4)
+            res = int.from_bytes(res, byteorder='big', signed=False)
+            data.append("{:08x}".format(res))
+        return data
+
     def send(self, hexStr):
         self.ser.write(self.str2barray(hexStr,16))
 
     def recv(self, numBytes):
-        res = b""
         res = self.ser.read(4)
-        while(len(res) < numBytes):
+        self.processing = True
+        while(len(res) < numBytes) and self.processing :
             res += self.ser.read(4)
         return res
 
-    def do_run(self, args):
-        """run adressnHex"""
-        args = args.split()
-        addr = args[0]
-        self.do_i( "partial/runinit1", echo=False)
-        #set pc and npc
-        mes = "c090400010" + addr
-        self.ser.write(self.str2barray(mes, 16))
-        mes = "c090400014" + "{:08x}".format(int(addr,16)+4)
-        self.ser.write(self.str2barray(mes, 16))
-        self.do_i( "partial/runinit2", echo=False)
-        #uart loop
-        self.processng = True
-        while(True):
-            #check for trap
-            self.send("8090000020")
-            self.send("8090000020")
-            res = self.recv(4)
-            print(res)
-            if (res[3] % 2) != 0: # less significant byte is even (0xXXXXXXX1)
-                #error!
-                self.handle_run_trap()
-            self.send("8090000020")    # read dsu break reg
-            self.recv(4)
-            self.send("8080000104")    # read uart status reg
-            self.recv(4)
-            self.send("8080000110")   # read uart debug FIFO reg, with the output
-            res = self.recv(4)
-            print(chr(res[3]))
-            if not self.processng:
-                break
-        print("")
-        self.do_i( "partial/runend", echo=False)
-
     def handle_run_trap(self):
-        self.processng = False
+        self.processing = False
         self.send("8090000020") # get trap base register to get trap type
         tt = self.ser.read(4)[3]
         self.send("8090400010") # get pc
@@ -194,21 +276,22 @@ Trap type = {:x}""".format(pc,tt))
         quit()
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         print("Usage: rcmon device baudrate")
         quit()
     print("Starting Rcmon...")
     dev = sys.argv[1]
     baud = sys.argv[2]
-    prompt = Rcmon(dev, baud)
+    redirectUart = True if "-u" in sys.argv else False
+    prompt = Rcmon(dev, baud, redirectUart)
     prompt.prompt = 'rcmon> '
 
     def signal_handler(sig, frame):
-        if not prompt.processng:
+        if not prompt.processing:
             print("")
             prompt.do_q("")
         else:
-            prompt.processng = False
+            prompt.processing = False
     signal.signal(signal.SIGINT, signal_handler)
 
     prompt.cmdloop('')

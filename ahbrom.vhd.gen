@@ -83,10 +83,14 @@ begin
     when 16#00001# => romdata <= X"0D200000"; -- 0004
     when 16#00002# => romdata <= X"8C11A100"; -- 0008
     when 16#00003# => romdata <= X"CA218000"; -- 000c
-    when 16#00004# => romdata <= X"10800000"; -- 0010
+    when 16#00004# => romdata <= X"10BFFFFC"; -- 0010
     when 16#00005# => romdata <= X"01000000"; -- 0014
     when 16#00006# => romdata <= X"01000000"; -- 0018
     when 16#00007# => romdata <= X"01000000"; -- 001c
+    when 16#00008# => romdata <= X"00000000"; -- 0020
+    when 16#00009# => romdata <= X"00000000"; -- 0024
+    when 16#0000A# => romdata <= X"00000000"; -- 0028
+    when 16#0000B# => romdata <= X"00000000"; -- 002c
     when others => romdata <= (others => '-');
     end case;
   end process;
