@@ -7,6 +7,7 @@ import math
 import os
 import signal
 import time
+from elftools.elf.elffile import ELFFile
 
 
 class Rcmon(Cmd):
@@ -40,11 +41,11 @@ class Rcmon(Cmd):
         self.protocolWrite( "80000108", ["00000800"] )
         self.protocolWrite( "80000108", ["00000000"] )
         self.protocolWrite( "8000010c", ["99999999"] )
-        self.protocolWrite( "80000108", ["00000003"] )
+        self.protocolWrite( "80000108", ["80000003"] )
 
     def configUartDebugMode(self):
         self.configUart()
-        self.protocolWrite("80000108", ["00000843"])
+        self.protocolWrite("80000108", ["80000843"])
 
     def readUartDebug(self):
         return self.protocolRead("8080000110", 1)
@@ -117,10 +118,6 @@ class Rcmon(Cmd):
         addr = int(args[0], 16)
         pc = "{:08x}".format(addr)
         npc = "{:08x}".format(addr+4)
-        if self.redirectUart:
-            self.configUartDebugMode()
-        else:
-            self.configUart()
         #set pc and npc
         self.protocolWrite("90400010", [pc, npc])
         #zero registers
@@ -130,6 +127,12 @@ class Rcmon(Cmd):
             iterAddr = baseRegAddr + (i * 0x20)
             iterAddr = "{:08x}".format(iterAddr)
             self.protocolWrite(iterAddr, ["00000000"]*8)
+        self.protocolRead("80000000", 1)
+        #config uart
+        if self.redirectUart:
+            self.configUartDebugMode()
+        else:
+            self.configUart()
         self.setProcessorDebugModeStatus(False) # begin execution
         #execution loop
         self.processing = True
@@ -138,6 +141,7 @@ class Rcmon(Cmd):
             if self.isProcessorInDebugMode():
                 self.processing = False
             if self.redirectUart: #get uart output
+                res = self.protocolRead("80000104",1)
                 res = self.protocolRead("80000110",1)
                 if len(res) > 0:
                     print(chr(int(res[0],16)), end="", flush=True)
@@ -170,13 +174,26 @@ class Rcmon(Cmd):
         f = bincopy.BinFile()
         f.add_srec_file(fileName)
         d = f.as_binary()
+        wordLen = 4 #4 bytes
+        maxWordPerCommand = 64
+        maxBytesPerCommand = maxWordPerCommand * wordLen
         datalen = len(d)
-        datatimes = math.ceil( datalen//64 )
-        for i in range(0,datatimes):
-            sendData = d[i*64:64+(i*64)]
-            mes = "11"+"{:06b}".format(len(sendData)-1)+"{:032b}".format(addr)
+        datalenword = len(d)//wordLen
+        datatimes = math.ceil( datalenword/maxWordPerCommand)
+        print(datalen)
+        lastAmount = 0
+        for i in range(0, datatimes):
+            sendData = d[i*lastAmount * wordLen : maxWordPerCommand*wordLen+(i*lastAmount * wordLen )]
+            totalInWords = len(sendData) // wordLen
+            totalInBytes = len(sendData)
+            lastAmount = totalInWords
+            mes = "11"+"{:06b}".format(totalInWords-1)+"{:032b}".format(addr)
             mes = self.str2barray(mes,2)
-            self.ser.write(mes + sendData)
+            self.ser.write(mes)
+            self.ser.write(sendData)
+            addr += totalInBytes
+
+
 
     def do_sr(self,args):
         """sr hexAddress amount """
