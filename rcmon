@@ -8,12 +8,13 @@ import os
 import signal
 import time
 from elftools.elf.elffile import ELFFile
-
+import traceback
 
 class Rcmon(Cmd):
 
     def __init__(self, devName, baud, redirectUart = False):
         Cmd.__init__(self)
+        self.quit = False
         self.conn(devName, baud)
         self.setProcessorDebugModeStatus(True)
         print("Entering processor debug mode...")
@@ -193,6 +194,31 @@ class Rcmon(Cmd):
             self.ser.write(sendData)
             addr += totalInBytes
 
+    def do_load(self, args):
+        args = args.split()
+        fileName = args[0]
+        elf = ELFFile(open(fileName,"rb"))
+        segments = [x for x in elf.iter_segments()]
+        wordLen = 4 #4 bytes
+        maxWordPerCommand = 64
+        maxBytesPerCommand = maxWordPerCommand * wordLen
+        for seg in segments:
+            data = seg.data()
+            addr = seg.header.p_vaddr
+            datalen = seg.header.p_filesz
+            datalenword = len(data)//wordLen
+            datatimes = math.ceil( datalenword/maxWordPerCommand)
+            lastAmount = 0
+            for i in range(0, datatimes):
+                sendData = data[i*lastAmount * wordLen : maxWordPerCommand*wordLen+(i*lastAmount * wordLen )]
+                totalInWords = len(sendData) // wordLen
+                totalInBytes = len(sendData)
+                lastAmount = totalInWords
+                mes = "11"+"{:06b}".format(totalInWords-1)+"{:032b}".format(addr)
+                mes = self.str2barray(mes,2)
+                self.ser.write(mes)
+                self.ser.write(sendData)
+                addr += totalInBytes
 
 
     def do_sr(self,args):
@@ -290,6 +316,7 @@ Trap type = {:x}""".format(pc,tt))
 
     def do_q(self,args):
         print("Quiting...");
+        self.quit = True
         quit()
 
 if __name__ == '__main__':
@@ -310,5 +337,10 @@ if __name__ == '__main__':
         else:
             prompt.processing = False
     signal.signal(signal.SIGINT, signal_handler)
-
-    prompt.cmdloop('')
+    while(True):
+        try:
+            prompt.cmdloop('')
+        except:
+            if prompt.quit:
+                quit()
+            traceback.print_exc()
