@@ -113,6 +113,15 @@ class Rcmon(Cmd):
     def runHexFile():
         pass
 
+    def configSpecialRegs(self):
+        self.protocolWrite("90400024", ["00000002"])
+        self.protocolWrite("90400000", ["00000000", "000000e0", "00000002", "40001000", "40001000", "40001004", "10000000"])
+        self.protocolWrite("90000000", ["000002ef"])
+        self.protocolWrite("fff00100", ["16208444"])
+        self.protocolWrite("fff00104", ["00c8908c"])
+        self.protocolWrite("fff00108", ["13410000"])
+
+
     def do_run(self, args):
         """run addrHex """
         args = args.split()
@@ -123,6 +132,8 @@ class Rcmon(Cmd):
         self.protocolWrite("90400010", [pc, npc])
         #zero registers
         self.protocolWrite("90300204", ["00000000"]*7)
+        #configure special registers
+        self.configSpecialRegs()
         baseRegAddr = 0x90300000
         for i in range(0, 16):
             iterAddr = baseRegAddr + (i * 0x20)
@@ -145,16 +156,26 @@ class Rcmon(Cmd):
                 res = self.protocolRead("80000104",1)
                 res = self.protocolRead("80000110",1)
                 if len(res) > 0:
-                    print(chr(int(res[0],16)), end="", flush=True)
+                    if int(res[0],16) != 0:
+                        print(chr(int(res[0],16)), end="", flush=True)
         print("")
         self.setProcessorDebugModeStatus(True)
 
     def isProcessorInDebugMode(self, pid = 0):
-        dsuBreakStepReg = int(self.protocolRead("90000020", 1)[0], 16)
+        res = self.protocolRead("90000020", 1)
+        dsuBreakStepReg = int(res[0], 16)
         mask = 1 << pid
-        dsuBreakStepReg = dsuBreakStepReg and pid
+        dsuBreakStepReg = dsuBreakStepReg & mask
         dsuBreakStepReg = dsuBreakStepReg >> pid
         if dsuBreakStepReg == 1:
+            print("Interrupted!")
+            res = self.protocolRead("90400020", 1)
+            interuptionCode = int(res[0], 16) & 0x000007F8
+            errormode = int(res[0], 16) & 0x00000800
+            print("\nInterruption code: 0x{:02x}. ErrorMode: {}".format(interuptionCode, errormode))
+            pc = self.protocolRead("90400010",1)[0]
+            instructionpc = self.protocolRead(pc,1)[0]
+            print("PC(0x{}) => 0x{}".format(pc, instructionpc))
             return True
         else:
             return False
