@@ -11,7 +11,7 @@ from elftools.elf.elffile import ELFFile
 import traceback
 import glob
 
-class Rcmon(Cmd):
+class rvmon(Cmd):
 
     __hiden_methods = ('do_EOF',)
 
@@ -44,7 +44,7 @@ class Rcmon(Cmd):
         self.processing = False
         self.redirectUart = redirectUart
         if redirectUart :
-            print("Redirection UART to RCMON.")
+            print("Redirection UART to rvmon.")
 
     def tryConnection(self):
         tryCount = 5
@@ -327,7 +327,7 @@ class Rcmon(Cmd):
                 - hexAddress: Memory address in hexadecimal to begin reading.
                 - amount: Amounts of words to be read.
             Example:
-                rcmon> sr 40400010 3
+                rvmon> sr 40400010 3
                     0x40400010 =>  0x40001080
                     0x40400014 =>  0x40fe1084
                     0x40400018 =>  0x000234AA
@@ -497,15 +497,27 @@ Trap type = {:x}""".format(pc,tt))
         quit()
 
 if __name__ == '__main__':
+    if "-h" in sys.argv:
+        print(""" Usage:
+    rvmon device baudrate [-u]
+
+    - device: device file name, e.g. /dev/ttyUSB1
+    - baudrate: The parameter baudrate can be one of the standard values: 50, 75,
+      110, 134, 150, 200, 300, 600, 1200, 1800, 2400, 4800, 9600, 19200, 38400,
+      57600, 115200. These are well supported on all platforms
+
+ Optional 
+     -u: If set, the UART will be set in debug mode and will be redirected to RVMON. """)
+        exit()
     if len(sys.argv) < 3:
-        print("Usage: rcmon device baudrate")
+        print("Usage: rvmon device baudrate")
         quit()
-    print("Starting Rcmon...")
+    print("Starting rvmon...")
     dev = sys.argv[1]
     baud = sys.argv[2]
     redirectUart = True if "-u" in sys.argv else False
-    prompt = Rcmon(dev, baud, redirectUart)
-    prompt.prompt = 'rcmon> '
+    prompt = rvmon(dev, baud, redirectUart)
+    prompt.prompt = 'rvmon> '
 
     def signal_handler(sig, frame):
         if not prompt.processing:
