@@ -5,6 +5,8 @@ The ReonV project can be found here: [ReonV](https://github.com/lcbcFoo/ReonV)
 
 This project was made as a substitute for GRMON3, since it cannot work properly with Risc-V ISA.
 
+__Note:__ This monitor was created based on the _Digilent Nexys4ddr_ FPGA board. So some features may not work properly in other boards.
+
 As of now, RVMON only initializes DDR2 memory controller at start-up. Other controllers may be added in the future.
 
 Feel free to use and extend RVMON as you wish.
