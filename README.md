@@ -22,5 +22,20 @@ rvmon device baudrate [-u]
 rvmon /dev/ttyUSB1 115200
 ```
 
-### Basic serialCommandsFileName
-#### load
+
+### Commands
+
+To get a list of available commands:
+```
+RVMON> help
+
+Documented commands (type help <topic>):
+========================================
+conn  fix  help  i  load  q  replay  run  sr  srecl  sw
+
+```
+
+All commands has some kind of help, built-in to RVMON. Just type:
+```
+RVMON> help commandName
+```

@@ -9,8 +9,31 @@ import signal
 import time
 from elftools.elf.elffile import ELFFile
 import traceback
+import glob
 
 class Rcmon(Cmd):
+
+    __hiden_methods = ('do_EOF',)
+
+
+    def _autocompleteLastArgAsFile(self, line, argNumberList = []):
+        if line[-1] == ' ':
+            return glob.glob("*")
+        args = line.split()
+        if (not len(args)-1 in argNumberList) and len(argNumberList) > 0:
+            return []
+        completions = []
+        if len(args) > 1:
+            arg = args[-1]
+            if len(arg) > 0:
+                pattern = arg + '*'
+                for path in glob.glob(pattern):
+                    if path.find(arg) != -1:
+                        completions.append(path)
+        return completions
+
+    def get_names(self):
+        return [n for n in dir(self.__class__) if n not in self.__hiden_methods]
 
     def __init__(self, devName, baud, redirectUart = False):
         Cmd.__init__(self)
@@ -59,12 +82,22 @@ class Rcmon(Cmd):
         print("Connected.")
 
     def do_conn(self, args):
-        """conn device baudrate"""
-        args = args.split()
+        """
+            Make a new connection to a UART interface.
+            Usage:
+                RVMON> conn device baudrate
+                - device: e.g. "/dev/ttyUSB1"
+                - baudrate: Any of the default baudrate, e.g. 115200, 38400, etc.
+        """
+        args = self.testCmdArgsLen(args, "conn", 2)
+        if args == False: return
         self.conn(args[0], args[1])
 
     def do_fix(self, args):
-        """Use it to try  fix UART connection."""
+        """Tries to fix the current UART connection.
+            Usage:
+            RVMON> fix
+        """
         print("Trying to fix connection.")
         self.tryConnection()
 
@@ -79,16 +112,25 @@ class Rcmon(Cmd):
         return int(s,base).to_bytes(totalBytes, byteorder="big")
 
     def do_sw(self,args):
-        """sw hexAddress (data32bits)+ """
-        args = args.split()
+        """
+            Serial write. Low level protocol communication with ReonV.
+            Write values sequentially to specified memory address.
+            Usage:
+                RVMON> sw hexAddress wordDataList
+                - hexAddress: Memory address in hexadecimal to begin reading.
+                - wordDataList: A list of words to be written sequentially
+                  begining in adress 'hexAddress'
+        """
+        args = self.testCmdArgsLen(args, "conn", 2)
+        if args == False: return
         addr = int(args[0],16)
         data = args[1:]
         if len(data) == 0:
-            print("invalid amount of data.")
+            print("Invalid amount of data.")
             return
         amount = len(data)
         if amount > (2**6) or amount < 1:
-            print("Amount need to fit in 6 bits")
+            print("Amount need to fit between 1 and 64.")
             return
         mes = "11"+"{:06b}".format(amount-1)+"{:032b}".format(addr)
         print("<  {:010x}".format(int(mes,2)))
@@ -101,13 +143,23 @@ class Rcmon(Cmd):
             barray = self.str2barray(bd,2)
             self.ser.write(barray)
 
+    def complete_replay(self, text, line, begidx, endidx):
+        return self._autocompleteLastArgAsFile(line, [1])
+
     def replayserialfile(self, fileName):
         r = open(fileName, "rb").read()
         self.ser.write(r)
 
     def do_replay(self,args):
-        """replay fileName"""
-        args = args.split()
+        """
+            Low level communication. Send directly to UART the given binary file as arguments.
+            Normally used to replay some sniffed traffic between ReonV and the monitor.
+            Usage:
+                RVMON>replay fileName
+                - fileName: Binary file containing a byte stream.
+        """
+        args = self.testCmdArgsLen(args, "conn", 2)
+        if args == False: return
         self.replayserialfile(args[0])
 
     def runHexFile():
@@ -123,8 +175,14 @@ class Rcmon(Cmd):
 
 
     def do_run(self, args):
-        """run addrHex """
-        args = args.split()
+        """
+            Make the processor run beginning at a specified address.
+            Usage:
+                RVMON> run addrHex
+                - addrHex: addres to begin running in hexadecimal.
+        """
+        args = self.testCmdArgsLen(args, "conn", 2)
+        if args == False: return
         addr = int(args[0], 16)
         pc = "{:08x}".format(addr)
         npc = "{:08x}".format(addr+4)
@@ -187,10 +245,19 @@ class Rcmon(Cmd):
         else:
             self.protocolWrite("90000020", ["00000000"])
 
+    def complete_srecl(self, text, line, begidx, endidx):
+        return self._autocompleteLastArgAsFile(line, [1])
 
     def do_srecl(self, args):
-        """srecl srecFileName addresToLadInHex """
-        args = args.split()
+        """
+            Load file in SREC format to specified address.
+            Usage:
+                RVMON> srecl srecFileName addresToLoadInHex
+                - srecFileName: SREC file name.
+                - addresToLadInHex: Adress to load the specified file.
+        """
+        args = self.testCmdArgsLen(args, "conn", 2)
+        if args == False: return
         fileName = args[0]
         addr = int(args[1],16)
         f = bincopy.BinFile()
@@ -202,7 +269,6 @@ class Rcmon(Cmd):
         datalen = len(d)
         datalenword = len(d)//wordLen
         datatimes = math.ceil( datalenword/maxWordPerCommand)
-        print(datalen)
         lastAmount = 0
         for i in range(0, datatimes):
             sendData = d[i*lastAmount * wordLen : maxWordPerCommand*wordLen+(i*lastAmount * wordLen )]
@@ -215,8 +281,18 @@ class Rcmon(Cmd):
             self.ser.write(sendData)
             addr += totalInBytes
 
+    def complete_load(self, text, line, begidx, endidx):
+        return self._autocompleteLastArgAsFile(line, [1])
+
     def do_load(self, args):
-        args = args.split()
+        """
+            Load ELF file into memory.
+            Usage:
+                RVMON> load elfFileName
+                - elfFileName: ELF file name to be loaded
+        """
+        args = self.testCmdArgsLen(args, "conn", 2)
+        if args == False: return
         fileName = args[0]
         elf = ELFFile(open(fileName,"rb"))
         segments = [x for x in elf.iter_segments()]
@@ -243,7 +319,20 @@ class Rcmon(Cmd):
 
 
     def do_sr(self,args):
-        """sr hexAddress amount """
+        """
+            Serial read. Low level protocol communication with ReonV.
+            Print on the screen memory read.
+            Usage:
+                RVMON> sr hexAddress amount
+                - hexAddress: Memory address in hexadecimal to begin reading.
+                - amount: Amounts of words to be read.
+            Example:
+                rcmon> sr 40400010 3
+                    0x40400010 =>  0x40001080
+                    0x40400014 =>  0x40fe1084
+                    0x40400018 =>  0x000234AA
+
+        """
         if self.ser == None:
             print("Serial not connected.")
             return
@@ -254,22 +343,79 @@ class Rcmon(Cmd):
             return
         amount = int(args[1])
         if amount > (2**6) or amount < 1:
-            print("Amount need to fit in 6 bits")
+            print("Amount need to fit between 1 and 64.")
             return
         mes = "10"+"{:06b}".format(amount-1)+"{:032b}".format(addr)
-        print("<  {:010x}".format(int(mes,2)))
         mes = self.str2barray(mes,2)
         self.ser.write(mes)
-        for t in range(0,amount):
+        res = self.ser.read(4)
+        t = 0
+        while(len(res) > 0):
+            res = int.from_bytes(res, byteorder='big', signed=False)
+            print("\t0x{:08x} =>  0x{:08x}".format(addr+t,res))
+            t+=4
             res = self.ser.read(4)
-            while(len(res) > 0):
-                res = int.from_bytes(res, byteorder='big', signed=False)
-                print(">  {:08x}".format(res))
-                res = self.ser.read(4)
+
+    def complete_i(self, text, line, begidx, endidx):
+        return self._autocompleteLastArgAsFile(line, [1])
 
     def do_i(self, args, echo=True):
-        """i serialCommandsFileName """
-        args = args.split()
+        """
+            Low level communication. Interpret serial commands file, output
+            to UART bare protocol commands.
+            Usage:
+                RVMON> i serialCommandsFileName
+                - serialCommandsFileName: A file in serial commands format.
+            Serial protocol:
+                The UART communication protocol contains a read and a write
+                command. Both follow a static structure:
+                    Read X words (40 bits):
+                        [10][6 bits: X-1][32 bits: Address]
+                        e.g. 0x8312345678
+                            Read 4 words sequentially, begining in adress 0x12345678
+                        X has to be between 1 < X < 64
+
+                    Write X words(40 bits):
+                        [11][6 bits: X-1][32 bits: Address]
+                        Followed by 'amount' times of words to be written
+                        sequentially begining in the address specified.
+                        e.g. 0xc112345678 aabbaabb ccddccdd
+                            Write 2 words sequentially begining in adress 0x12345678
+                        X has to be between 1 < X < 64
+
+
+            File format:
+                In order for the file to be interpretable it must follow the
+                following rules:
+                - Each line must contain only one command or argument.
+                - A command is a protocol element - either a write or read
+                  command - following the protocol explained above.
+                - Commands are 10 characters long and represent a 40 bit number
+                  in hexadecimal.
+                - Tabs and spaces are ignored.
+                - Arguments are 8 characters long and represent a 40 bit number
+                  in hexadecimal.
+                - After a write command with X amount of data to write, the
+                  next X lines are data arguments.
+                - Empty lines are ignored.
+                - Everything in a line after and ingluding a '-' is consider
+                  comment.
+                This file will be executed from top to bottom, and the read
+                commands will be output to the terminal.
+                Example:
+                    -- Write 0xdac to adress 0xff00ff00
+                    c0ff00ff00
+                        00000dac -- this is another comment
+
+                    -- Some  more commands
+                    c290000024 -- write 3 words begin in adress 90000024
+                        fffe0001 -- write this to addr 0x90000024
+                        fffe0002 -- write this to addr 0x90000028
+                        fffe0003 -- write this to addr 0x9000002c
+                    8090000040 -- read something here
+        """
+        args = self.testCmdArgsLen(args, "conn", 2)
+        if args == False: return
         lines = open(args[0], "r").read().split("\n")
         lines = [l.partition("-")[0] for l in lines]
         data = "".join(lines)
@@ -278,13 +424,13 @@ class Rcmon(Cmd):
         data = data.replace("\n","")
         serData = self.str2barray(data, 16);
         if echo:
-            print("<  " + data)
+            print("<  0x" + data)
         self.ser.write(serData)
         res = self.ser.read(4)
         while(len(res) > 0):
             res = int.from_bytes(res, byteorder='big', signed=False)
             if echo:
-                print(">  {:08x}".format(res))
+                print(">  0x{:08x}".format(res))
             res = self.ser.read(4)
 
     def protocolWrite(self, addrHex, dataHexList):
@@ -333,9 +479,19 @@ class Rcmon(Cmd):
 PC = {:08x}
 Trap type = {:x}""".format(pc,tt))
 
-
+    def testCmdArgsLen(self, args, comname, numArgs):
+        args = args.split()
+        if len(args) != numArgs:
+            self.do_help(comname)
+            return False
+        return args
 
     def do_q(self,args):
+        """
+            Quits the monitor.
+            Usage:
+            RVMON> q
+        """
         print("Quiting...");
         self.quit = True
         quit()
