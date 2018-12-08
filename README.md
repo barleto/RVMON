@@ -15,7 +15,13 @@ These libraries are easely installed with [__pip3__](https://pip.pypa.io/en/stab
 
 ## Usage:
 ```
-rvmon device baudrate [-u]
+rvmon -h
+Usage:
+    rvmon device baudrate [-u]
+    - device: device file name, e.g. /dev/ttyUSB1
+    - baudrate: The parameter baudrate can be one of the standard values: 50, 75, 110, 134, 150, 200, 300, 600, 1200, 1800,         2400, 4800, 9600, 19200, 38400, 57600, 115200. These are well supported on all platforms.
+    
+    -u: If set, the UART will be set in debug mode and will be redirected to RVMON. 
 ```
 #### Example:
 ```bash
