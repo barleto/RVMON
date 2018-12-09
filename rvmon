@@ -231,8 +231,8 @@ class rvmon(Cmd):
         if dsuBreakStepReg == 1:
             print("Interrupted!")
             res = self.protocolRead("90400020", 1)
-            interuptionCode = int(res[0], 16) & 0x000007F8
             errormode = int(res[0], 16) & 0x00000800
+            interuptionCode = int(res[0], 16) & 0x00000FF0
             print("\nInterruption code: 0x{:02x}. ErrorMode: {}".format(interuptionCode, errormode))
             pc = self.protocolRead("90400010",1)[0]
             instructionpc = self.protocolRead(pc,1)[0]
