@@ -89,7 +89,7 @@ class rvmon(Cmd):
                 - device: e.g. "/dev/ttyUSB1"
                 - baudrate: Any of the default baudrate, e.g. 115200, 38400, etc.
         """
-        args = self.testCmdArgsLen(args, "conn", 2)
+        args = args.split()
         if args == False: return
         self.conn(args[0], args[1])
 
@@ -121,8 +121,10 @@ class rvmon(Cmd):
                 - wordDataList: A list of words to be written sequentially
                   begining in adress 'hexAddress'
         """
-        args = self.testCmdArgsLen(args, "conn", 2)
-        if args == False: return
+        args = args.split()
+        if len(args) < 2:
+            self.do_help("sw")
+            return
         addr = int(args[0],16)
         data = args[1:]
         if len(data) == 0:
@@ -133,13 +135,14 @@ class rvmon(Cmd):
             print("Amount need to fit between 1 and 64.")
             return
         mes = "11"+"{:06b}".format(amount-1)+"{:032b}".format(addr)
-        print("<  {:010x}".format(int(mes,2)))
+        print("Writing data sequentially begining in {:08x}.".format(int(mes,2)))
         mes = self.str2barray(mes,2)
         self.ser.write(mes)
         for d in data:
             d = int(d,16)
             bd = "{:032b}".format(d)
-            print("<  {:08x}".format(d))
+            print("\t{:08x} ==>  {:08x}".format(addr,d))
+            addr += 4
             barray = self.str2barray(bd,2)
             self.ser.write(barray)
 
@@ -158,7 +161,7 @@ class rvmon(Cmd):
                 RVMON>replay fileName
                 - fileName: Binary file containing a byte stream.
         """
-        args = self.testCmdArgsLen(args, "conn", 2)
+        args = args.split()
         if args == False: return
         self.replayserialfile(args[0])
 
@@ -181,7 +184,7 @@ class rvmon(Cmd):
                 RVMON> run addrHex
                 - addrHex: addres to begin running in hexadecimal.
         """
-        args = self.testCmdArgsLen(args, "conn", 2)
+        args = args.split()
         if args == False: return
         addr = int(args[0], 16)
         pc = "{:08x}".format(addr)
@@ -256,7 +259,7 @@ class rvmon(Cmd):
                 - srecFileName: SREC file name.
                 - addresToLadInHex: Adress to load the specified file.
         """
-        args = self.testCmdArgsLen(args, "conn", 2)
+        args = args.split()
         if args == False: return
         fileName = args[0]
         addr = int(args[1],16)
@@ -291,7 +294,7 @@ class rvmon(Cmd):
                 RVMON> load elfFileName
                 - elfFileName: ELF file name to be loaded
         """
-        args = self.testCmdArgsLen(args, "conn", 2)
+        args = args.split()
         if args == False: return
         fileName = args[0]
         elf = ELFFile(open(fileName,"rb"))
@@ -414,7 +417,7 @@ class rvmon(Cmd):
                         fffe0003 -- write this to addr 0x9000002c
                     8090000040 -- read something here
         """
-        args = self.testCmdArgsLen(args, "conn", 2)
+        args = args.split()
         if args == False: return
         lines = open(args[0], "r").read().split("\n")
         lines = [l.partition("-")[0] for l in lines]
@@ -432,6 +435,32 @@ class rvmon(Cmd):
             if echo:
                 print(">  0x{:08x}".format(res))
             res = self.ser.read(4)
+
+    def do_regs(self, args):
+        """
+        Prints all registers content.
+        Usage:
+            RVMON> regs
+        """
+        args = args.split()
+        regs = self.protocolRead("90300000", 32)
+        specialregs = self.protocolRead("90400000", 6)
+        print("""
+     00:  0x{00}   08: 0x{08}   16: 0x{16}   24: 0x{24}
+     01:  0x{01}   09: 0x{09}   17: 0x{17}   25: 0x{25}
+     02:  0x{02}   10: 0x{10}   18: 0x{18}   26: 0x{26}
+     03:  0x{03}   11: 0x{11}   19: 0x{19}   27: 0x{27}
+     04:  0x{04}   12: 0x{12}   20: 0x{20}   28: 0x{28}
+     05:  0x{05}   13: 0x{13}   21: 0x{21}   29: 0x{29}
+     06:  0x{06}   14: 0x{14}   22: 0x{22}   30: 0x{30}
+     07:  0x{07}   15: 0x{15}   23: 0x{23}   31: 0x{31}
+""".format(*regs))
+        print("""
+   psr: 0x{1}   wim: 0x{2}   tbr: 0x{3}   Y: 0x{0}
+
+   pc:   0x{4}
+   npc:  0x{5}
+              """.format(*specialregs))
 
     def protocolWrite(self, addrHex, dataHexList):
         dataHexList = dataHexList[0:64]
@@ -478,14 +507,6 @@ class rvmon(Cmd):
 """Trap occured!
 PC = {:08x}
 Trap type = {:x}""".format(pc,tt))
-
-    def testCmdArgsLen(self, args, comname, numArgs):
-        args = args.split()
-        if len(args) != numArgs:
-            self.do_help(comname)
-            return False
-        return args
-
     def do_q(self,args):
         """
             Quits the monitor.
@@ -506,7 +527,7 @@ if __name__ == '__main__':
       110, 134, 150, 200, 300, 600, 1200, 1800, 2400, 4800, 9600, 19200, 38400,
       57600, 115200. These are well supported on all platforms
 
- Optional 
+ Optional
      -u: If set, the UART will be set in debug mode and will be redirected to RVMON. """)
         exit()
     if len(sys.argv) < 3:

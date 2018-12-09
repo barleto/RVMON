@@ -5,15 +5,6 @@ def eprint(*args, **kwargs):
 
 if __name__ == '__main__':
     print("""
-----------------------------------------------------------------------------
---  This file is a part of the GRLIB VHDL IP LIBRARY
---  Copyright (C) 2010 Aeroflex Gaisler
-----------------------------------------------------------------------------
--- Entity: 	ahbrom
--- File:	ahbrom.vhd
--- Author:	Jiri Gaisler - Gaisler Research
--- Description:	AHB rom. 0/1-waitstate read
-----------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 library grlib;
