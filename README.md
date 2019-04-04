@@ -13,7 +13,7 @@ Feel free to use and extend RVMON as you wish.
 
 ## Requirements
 
-You need Python3, with the following oython3 libs installed:
+You need Python3, with the following python3 libs installed:
 - pyserial
 - pyelftools
 - bincopy
