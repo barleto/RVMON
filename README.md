@@ -17,6 +17,7 @@ You need Python3, with the following python3 libs installed:
 - pyserial
 - pyelftools
 - bincopy
+
 These libraries are easely installed with [__pip3__](https://pip.pypa.io/en/stable/installing/) or any other way to install python3 modules.
 
 ## Usage:
